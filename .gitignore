@@ -21,3 +21,5 @@ build/
 
 # Local files
 refresh_token.txt
+
+z_old/
