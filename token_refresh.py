@@ -114,16 +114,11 @@ def get_client_secrets(airtable_client: Airtable):
         print(f"Error fetching records from Airtable: {e}")
         raise
 
-def update_airtable_record(airtable_client: Airtable, record_id: str, access_token: str, expiry_time: datetime):
-    """Updates an Airtable record with new access token and expiry."""
+def update_airtable_record(airtable_client: Airtable, record_id: str, update_data: dict):
+    """Updates an Airtable record with the provided data."""
     try:
-        # Airtable expects the datetime in ISO 8601 format
-        expiry_iso = expiry_time.isoformat()
-        airtable_client.update(record_id, {
-            'last_access_token': access_token,
-            'access_token_expiry': expiry_iso
-        })
-        print(f"Successfully updated record {record_id} with new access token.")
+        airtable_client.update(record_id, update_data)
+        print(f"Successfully updated record {record_id} with new data.")
     except Exception as e:
         print(f"Error updating Airtable record {record_id}: {e}")
         raise
@@ -140,8 +135,9 @@ def get_new_access_token(client_id: str, client_secret: str, refresh_token: str)
         refresh_token: The decrypted refresh token.
 
     Returns:
-        A tuple containing (access_token: str, expiry_time: datetime).
+        A tuple containing (access_token: str, expiry_time: datetime, new_refresh_token: str | None).
         expiry_time is a timezone-aware datetime object.
+        new_refresh_token is the new refresh token if returned by the API, otherwise None.
 
     Raises:
         requests.exceptions.RequestException: If the HTTP request fails.
@@ -160,14 +156,14 @@ def get_new_access_token(client_id: str, client_secret: str, refresh_token: str)
 
     try:
         response = requests.post(token_url, data=payload)
-        response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
+
+        response.raise_for_status() # Re-raise HTTP errors for bad responses (4xx or 5xx)
 
         token_data = response.json()
 
         access_token = token_data.get('access_token')
         expires_in = token_data.get('expires_in') # expires_in is usually in seconds
-        # Optional: GoHighLevel might return a new refresh_token. You could store this if needed.
-        # new_refresh_token = token_data.get('refresh_token')
+        new_refresh_token = token_data.get('refresh_token') # Get the new refresh token if available
 
         if not access_token or expires_in is None:
             raise ValueError("GoHighLevel API response missing access_token or expires_in.")
@@ -178,7 +174,8 @@ def get_new_access_token(client_id: str, client_secret: str, refresh_token: str)
         expiry_time = datetime.now(timezone.utc) + timedelta(seconds=expiry_seconds)
 
         print(f"Successfully obtained new token for client_id: {client_id}")
-        return access_token, expiry_time
+        # Return the new refresh token as well (it might be None)
+        return access_token, expiry_time, new_refresh_token
 
     except requests.exceptions.RequestException as e:
         print(f"HTTP request error during token refresh for {client_id}: {e}")
@@ -221,18 +218,31 @@ def refresh_tokens_for_all_clients(config, encryption_key: bytes):
             # print(f"Decrypted secret for {client_id}: {client_secret}")
             # print(f"Decrypted refresh token for {client_id}: {refresh_token}")
 
-            # 4. Call relevant API to get new access token
-            # YOU MUST REPLACE THE FOLLOWING LINE WITH YOUR ACTUAL OAUTH CALL
-            new_access_token, expiry_time = get_new_access_token(client_id, client_secret, refresh_token)
+            # 4. Call relevant API to get new access token and potentially new refresh token
+            new_access_token, expiry_time, new_refresh_token = get_new_access_token(client_id, client_secret, refresh_token)
 
-            # 5. Update Airtable with current access_token (unencrypted) and expiry
-            update_airtable_record(airtable_client, record_id, new_access_token, expiry_time)
+            # 5. Prepare data for Airtable update
+            update_data = {
+                'last_access_token': new_access_token,
+                'access_token_expiry': expiry_time.isoformat() # Airtable expects ISO 8601
+            }
+
+            # If a new refresh token was returned, encrypt and add it to the update data
+            if new_refresh_token:
+                print(f"New refresh token received for client {client_id}. Encrypting and updating Airtable.")
+                encrypted_new_refresh = encrypt_data(new_refresh_token, encryption_key)
+                update_data['encrypted_refresh'] = encrypted_new_refresh
+
+            # Update Airtable with the collected data
+            airtable_client.update(record_id, update_data)
+            print(f"Successfully updated record {record_id} with new access token and expiry (and potentially new refresh token).")
 
         except InvalidTag:
             print(f"Skipping client {client_id} due to decryption failure (Invalid Tag). Key might be incorrect or data corrupted.")
         except Exception as e:
             print(f"An error occurred while processing client {client_id}: {e}")
             # Continue processing other clients even if one fails
+
 
 # --- Optional: Client Onboarding ---
 
