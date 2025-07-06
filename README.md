@@ -75,7 +75,20 @@ python token_manager.py
 
 ## Deployment
 
-This script can be deployed in various ways on a server with Python and the ability to set environment variables, such as your Hetzner server.
+This script can be deployed in various ways on a server with Python and the ability to set environment variables.
+
+### Production Deployment (Hetzner)
+
+The production instance of this script runs on the Hetzner server (`n8n-marketingtechpro`) under the `deploy` user.
+
+*   **Code Location:** The project is located at `/home/deploy/token-refresh`.
+*   **Scheduling:** The script is scheduled using a cron job owned by the `deploy` user.
+*   **Checking the Cron Job:** To view or edit the cron job, use the following command while logged in as `root`:
+    ```bash
+    crontab -u deploy -l
+    ```
+
+### General Deployment Guidance
 
 *   **Cron Job:** The simplest method is to set up a cron job to run the `token_manager.py` script periodically. Ensure that all the required environment variables (`ENCRYPTION_KEY`, `AIRTABLE_API_KEY`, `AIRTABLE_BASE_ID`, `AIRTABLE_TABLE_NAME`) are set in the environment where the cron job executes.
 
